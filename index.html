@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0b1220">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="OCR книг">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./icon.svg">
+  <title>OCR книг и PDF</title>
+  <style>
+    :root { --bg:#0b1220; --card:#162033; --line:#2a3b57; --accent:#38bdf8; --text:#e8eef7; --muted:#93a4bb; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); max-width: 1100px; margin: 0 auto; padding: 20px; }
+    h1 { font-size: 1.45rem; margin: 0 0 6px; }
+    .hint { color: var(--muted); font-size: .9rem; margin-bottom: 16px; }
+    .panel { background: var(--card); border: 1px solid var(--line); padding: 16px; border-radius: 12px; margin-bottom: 14px; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+    label { font-size: .85rem; color: var(--muted); }
+    select, button { font: inherit; }
+    select { background: #0f1a2b; color: var(--text); border: 1px solid var(--line); padding: 8px 10px; border-radius: 8px; }
+    button { background: var(--accent); color: #06202c; border: 0; padding: 9px 14px; border-radius: 8px; font-weight: 700; cursor: pointer; }
+    button.secondary { background: #334155; color: #fff; }
+    button.danger { background: #fb7185; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    #drop { border: 2px dashed #3b82f6; border-radius: 12px; padding: 22px; text-align: center; color: var(--muted); cursor: pointer; }
+    #drop.over { background: #10243d; }
+    #barwrap { height: 8px; background: #0f1a2b; border-radius: 99px; overflow: hidden; margin-top: 10px; }
+    #bar { height: 100%; width: 0; background: var(--accent); }
+    #progress { margin-top: 8px; min-height: 22px; color: var(--accent); font-size: .9rem; }
+    textarea { width: 100%; min-height: 340px; background: #0a1424; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+    .grid { display: grid; grid-template-columns: 220px 1fr; gap: 12px; }
+    @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+    #pages { max-height: 340px; overflow: auto; }
+    .pagebtn { display: block; width: 100%; text-align: left; background: #0f1a2b; color: var(--text); margin-bottom: 6px; font-weight: 500; }
+    .pagebtn.active { outline: 2px solid var(--accent); }
+    .conf { color: var(--muted); font-size: .78rem; }
+    .status { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .pill { font-size: .75rem; padding: 4px 8px; border-radius: 99px; background: #0f1a2b; color: var(--muted); }
+    .pill.ok { color: #4ade80; }
+    .pill.warn { color: #fbbf24; }
+  </style>
+</head>
+<body>
+  <h1>OCR PDF, книг, учебников и картинок</h1>
+  <p class="hint">PWA: можно установить как приложение. Модели OCR и библиотеки кэшируются после первого запуска.</p>
+
+  <div class="panel status">
+    <span id="netPill" class="pill">сеть…</span>
+    <span id="swPill" class="pill">SW…</span>
+    <button id="installBtn" class="secondary" hidden>Установить</button>
+    <button id="updateBtn" class="secondary" hidden>Обновить приложение</button>
+  </div>
+
+  <div class="panel">
+    <div id="drop">Перетащите PDF или изображения сюда, либо нажмите для выбора</div>
+    <input type="file" id="fileInput" multiple accept=".pdf,image/*" hidden>
+    <div class="row">
+      <label>Язык
+        <select id="lang">
+          <option value="rus">Русский</option>
+          <option value="eng">English</option>
+          <option value="rus+eng" selected>Русский + English</option>
+        </select>
+      </label>
+      <label>Масштаб
+        <select id="scale">
+          <option value="1.5">1.5 (быстрее)</option>
+          <option value="2" selected>2</option>
+          <option value="2.5">2.5 (качественнее)</option>
+        </select>
+      </label>
+      <label>Сегментация
+        <select id="psm">
+          <option value="3">Авто</option>
+          <option value="1">Авто + OSD</option>
+          <option value="4">Одна колонка</option>
+          <option value="6" selected>Единый блок</option>
+          <option value="11">Разреженный текст</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="prep" checked> Предобработка</label>
+    </div>
+    <div class="row">
+      <button id="processBtn">Распознать</button>
+      <button id="cancelBtn" class="danger" disabled>Отмена</button>
+    </div>
+    <div id="barwrap"><div id="bar"></div></div>
+    <div id="progress"></div>
+  </div>
+
+  <div class="panel grid">
+    <div>
+      <div class="row" style="margin-top:0">
+        <button class="secondary" id="allPagesBtn" type="button">Весь текст</button>
+      </div>
+      <div id="pages"></div>
+    </div>
+    <textarea id="result" placeholder="Распознанный текст. Можно править перед экспортом."></textarea>
+  </div>
+
+  <div class="panel row">
+    <button id="dlTxt">TXT</button>
+    <button id="dlMd">Markdown</button>
+    <button id="dlJson">JSON</button>
+    <button id="dlPdfImg">PDF с картинками</button>
+    <button id="dlPdfSearch">Searchable PDF</button>
+    <button id="dlPdfTxt">PDF с текстом</button>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script>
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+
+    const drop = document.getElementById('drop');
+    const fileInput = document.getElementById('fileInput');
+    const resultEl = document.getElementById('result');
+    const pagesEl = document.getElementById('pages');
+    const prog = document.getElementById('progress');
+    const bar = document.getElementById('bar');
+    const processBtn = document.getElementById('processBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const installBtn = document.getElementById('installBtn');
+    const updateBtn = document.getElementById('updateBtn');
+    const netPill = document.getElementById('netPill');
+    const swPill = document.getElementById('swPill');
+
+    let files = [];
+    let pages = [];
+    let viewIndex = -1;
+    let cancelled = false;
+    let editingAll = true;
+    let deferredPrompt = null;
+    let waitingSW = null;
+
+    const savedLang = localStorage.getItem('ocr-lang');
+    if (savedLang) document.getElementById('lang').value = savedLang;
+    document.getElementById('lang').onchange = e => localStorage.setItem('ocr-lang', e.target.value);
+
+    function setNet() {
+      netPill.textContent = navigator.onLine ? 'онлайн' : 'офлайн';
+      netPill.className = 'pill ' + (navigator.onLine ? 'ok' : 'warn');
+    }
+    setNet();
+    window.addEventListener('online', setNet);
+    window.addEventListener('offline', setNet);
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').then(reg => {
+        swPill.textContent = 'PWA готов';
+        swPill.classList.add('ok');
+        if (reg.waiting) {
+          waitingSW = reg.waiting;
+          updateBtn.hidden = false;
+        }
+        reg.addEventListener('updatefound', () => {
+          const sw = reg.installing;
+          sw.addEventListener('statechange', () => {
+            if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+              waitingSW = sw;
+              updateBtn.hidden = false;
+            }
+          });
+        });
+      }).catch(() => {
+        swPill.textContent = 'SW недоступен';
+        swPill.classList.add('warn');
+      });
+      navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
+    } else {
+      swPill.textContent = 'без SW';
+    }
+
+    window.addEventListener('beforeinstallprompt', e => {
+      e.preventDefault();
+      deferredPrompt = e;
+      installBtn.hidden = false;
+    });
+    installBtn.onclick = async () => {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      await deferredPrompt.userChoice;
+      deferredPrompt = null;
+      installBtn.hidden = true;
+    };
+    updateBtn.onclick = () => {
+      if (waitingSW) waitingSW.postMessage({ type: 'SKIP_WAITING' });
+      else location.reload();
+    };
+
+    drop.onclick = () => fileInput.click();
+    drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+    drop.ondragleave = () => drop.classList.remove('over');
+    drop.ondrop = e => {
+      e.preventDefault();
+      drop.classList.remove('over');
+      files = [...e.dataTransfer.files];
+      drop.textContent = files.map(f => f.name).join(', ') || 'Файлы не выбраны';
+    };
+    fileInput.onchange = () => {
+      files = [...fileInput.files];
+      drop.textContent = files.map(f => f.name).join(', ') || 'Перетащите файлы сюда';
+    };
+
+    if (window.launchQueue && launchQueue.setConsumer) {
+      launchQueue.setConsumer(async params => {
+        const handles = params.files || [];
+        const opened = [];
+        for (const h of handles) opened.push(await h.getFile());
+        if (opened.length) {
+          files = opened;
+          drop.textContent = files.map(f => f.name).join(', ');
+        }
+      });
+    }
+
+    function setProgress(text, ratio) {
+      prog.textContent = text;
+      bar.style.width = Math.max(0, Math.min(100, (ratio || 0) * 100)) + '%';
+    }
+
+    function preprocess(canvas) {
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const d = img.data;
+      const contrast = 1.25, intercept = 128 * (1 - contrast);
+      for (let i = 0; i < d.length; i += 4) {
+        let g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        g = Math.max(0, Math.min(255, g * contrast + intercept));
+        d[i] = d[i + 1] = d[i + 2] = g;
+      }
+      ctx.putImageData(img, 0, 0);
+      return canvas;
+    }
+
+    function correctText(raw) {
+      if (!raw) return '';
+      let t = raw
+        .replace(/\u00ad/g, '')
+        .replace(/[“”«»]/g, '"')
+        .replace(/[‘’]/g, "'")
+        .replace(/(\p{L})-\s*\n\s*(\p{L})/gu, '$1$2')
+        .replace(/\|\s*(?=\p{L})/gu, 'I')
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n');
+      const lines = t.split('\n').map(l => l.replace(/[ \t]+/g, ' ').trim());
+      const paras = [];
+      let cur = '';
+      for (const line of lines) {
+        if (!line) { if (cur) { paras.push(cur); cur = ''; } continue; }
+        const startLower = /^[a-zа-яё]/.test(line);
+        const endPunct = /[.!?…"»)]$/u.test(cur);
+        if (cur && !endPunct && (startLower || cur.length < 70)) cur += ' ' + line;
+        else { if (cur) paras.push(cur); cur = line; }
+      }
+      if (cur) paras.push(cur);
+      return paras.join('\n\n').trim();
+    }
+
+    function joinedText() {
+      return pages.map((p, i) => `## Страница ${i + 1}\n\n${p.text}`).join('\n\n');
+    }
+
+    function renderPageList() {
+      pagesEl.innerHTML = '';
+      pages.forEach((p, i) => {
+        const b = document.createElement('button');
+        b.className = 'pagebtn' + (!editingAll && viewIndex === i ? ' active' : '');
+        b.innerHTML = `Стр. ${i + 1} <span class="conf">${p.confidence}%</span>`;
+        b.onclick = () => {
+          saveCurrentView();
+          editingAll = false;
+          viewIndex = i;
+          resultEl.value = pages[i].text;
+          renderPageList();
+        };
+        pagesEl.appendChild(b);
+      });
+    }
+
+    function saveCurrentView() {
+      if (!pages.length) return;
+      if (editingAll) {
+        const parts = resultEl.value.split(/\n*---------- страница ----------\n*/);
+        if (parts.length === pages.length) parts.forEach((t, i) => pages[i].text = t.trim());
+      } else if (viewIndex >= 0) {
+        pages[viewIndex].text = resultEl.value;
+      }
+    }
+
+    document.getElementById('allPagesBtn').onclick = () => {
+      saveCurrentView();
+      editingAll = true;
+      viewIndex = -1;
+      resultEl.value = pages.map(p => p.text).join('\n\n---------- страница ----------\n\n');
+      renderPageList();
+    };
+
+    async function fileToCanvas(file) {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+      URL.revokeObjectURL(url);
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth;
+      c.height = img.naturalHeight;
+      c.getContext('2d').drawImage(img, 0, 0);
+      return c;
+    }
+
+    async function pdfPageToCanvas(page, scale) {
+      const vp = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = vp.width;
+      canvas.height = vp.height;
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+      return canvas;
+    }
+
+    cancelBtn.onclick = () => { cancelled = true; };
+
+    processBtn.onclick = async () => {
+      if (!files.length) { alert('Выберите файлы'); return; }
+      if (typeof Tesseract === 'undefined' || typeof pdfjsLib === 'undefined') {
+        alert('Библиотеки ещё не загружены. Нужен интернет при первом запуске.');
+        return;
+      }
+      cancelled = false;
+      processBtn.disabled = true;
+      cancelBtn.disabled = false;
+      pages = [];
+      setProgress('Загрузка OCR…', 0);
+
+      const lang = document.getElementById('lang').value;
+      const scale = parseFloat(document.getElementById('scale').value);
+      const psm = document.getElementById('psm').value;
+      const doPrep = document.getElementById('prep').checked;
+
+      const worker = await Tesseract.createWorker(lang, 1, {
+        logger: m => {
+          if (m.status === 'recognizing text') {
+            setProgress(`OCR ${Math.round((m.progress || 0) * 100)}%`, m.progress || 0);
+          } else if (m.status) {
+            setProgress(m.status, m.progress || 0);
+          }
+        }
+      });
+      await worker.setParameters({ tessedit_pageseg_mode: psm });
+
+      try {
+        const jobs = [];
+        for (const file of files) {
+          const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+          if (isPdf) {
+            const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+            for (let i = 1; i <= pdf.numPages; i++) jobs.push({ type: 'pdf', pdf, i, name: file.name });
+          } else if (file.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp|tif{1,2})$/i.test(file.name)) {
+            jobs.push({ type: 'img', file });
+          }
+        }
+
+        for (let n = 0; n < jobs.length; n++) {
+          if (cancelled) break;
+          const job = jobs[n];
+          setProgress(`Страница ${n + 1} из ${jobs.length}: рендер…`, n / jobs.length);
+          let canvas = job.type === 'pdf'
+            ? await pdfPageToCanvas(await job.pdf.getPage(job.i), scale)
+            : await fileToCanvas(job.file);
+          if (doPrep) preprocess(canvas);
+          setProgress(`Страница ${n + 1} из ${jobs.length}: OCR…`, n / jobs.length);
+          const { data } = await worker.recognize(canvas);
+          const words = (data.words || []).map(w => ({
+            text: w.text, conf: w.confidence,
+            x0: w.bbox.x0, y0: w.bbox.y0, x1: w.bbox.x1, y1: w.bbox.y1
+          }));
+          const conf = words.length ? Math.round(words.reduce((s, w) => s + w.conf, 0) / words.length) : 0;
+          pages.push({
+            text: correctText(data.text),
+            confidence: conf,
+            words,
+            img: canvas.toDataURL('image/jpeg', 0.82),
+            w: canvas.width,
+            h: canvas.height
+          });
+          canvas.width = canvas.height = 0;
+        }
+
+        editingAll = true;
+        resultEl.value = pages.map(p => p.text).join('\n\n---------- страница ----------\n\n');
+        renderPageList();
+        setProgress(cancelled ? `Остановлено: ${pages.length} стр.` : `Готово: ${pages.length} стр.`, 1);
+      } catch (e) {
+        setProgress('Ошибка: ' + e.message, 0);
+        console.error(e);
+      }
+      await worker.terminate();
+      processBtn.disabled = false;
+      cancelBtn.disabled = true;
+    };
+
+    function download(content, name, type) {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([content], { type }));
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    document.getElementById('dlTxt').onclick = () => {
+      saveCurrentView();
+      download(pages.map(p => p.text).join('\n\n'), 'ocr.txt', 'text/plain;charset=utf-8');
+    };
+    document.getElementById('dlMd').onclick = () => {
+      saveCurrentView();
+      download(joinedText(), 'ocr.md', 'text/markdown;charset=utf-8');
+    };
+    document.getElementById('dlJson').onclick = () => {
+      saveCurrentView();
+      download(JSON.stringify({
+        pages: pages.map((p, i) => ({ page: i + 1, confidence: p.confidence, text: p.text, words: p.words }))
+      }, null, 2), 'ocr.json', 'application/json');
+    };
+
+    document.getElementById('dlPdfImg').onclick = async () => {
+      if (!pages.length) return alert('Сначала OCR');
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
+      const pw = pdf.internal.pageSize.getWidth(), ph = pdf.internal.pageSize.getHeight();
+      for (let i = 0; i < pages.length; i++) {
+        if (i) pdf.addPage();
+        const p = pages[i];
+        const r = Math.min(pw / p.w, ph / p.h) * 0.98;
+        const w = p.w * r, h = p.h * r;
+        pdf.addImage(p.img, 'JPEG', (pw - w) / 2, (ph - h) / 2, w, h);
+      }
+      pdf.save('pages-images.pdf');
+    };
+
+    document.getElementById('dlPdfSearch').onclick = () => {
+      if (!pages.length) return alert('Сначала OCR');
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({ unit: 'pt', format: [pages[0].w, pages[0].h] });
+      pages.forEach((p, i) => {
+        if (i) pdf.addPage([p.w, p.h]);
+        pdf.addImage(p.img, 'JPEG', 0, 0, p.w, p.h);
+        pdf.saveGraphicsState();
+        pdf.setGState(new pdf.GState({ opacity: 0 }));
+        p.words.forEach(w => {
+          const tw = Math.max(4, w.x1 - w.x0);
+          const th = Math.max(6, w.y1 - w.y0);
+          pdf.setFontSize(th * 0.9);
+          pdf.text(w.text, w.x0, w.y1 - th * 0.12, { maxWidth: tw + 2 });
+        });
+        pdf.restoreGraphicsState();
+      });
+      pdf.save('searchable.pdf');
+    };
+
+    document.getElementById('dlPdfTxt').onclick = () => {
+      saveCurrentView();
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF();
+      const text = pages.map((p, i) => `--- ${i + 1} ---\n${p.text}`).join('\n\n');
+      const lines = pdf.splitTextToSize(text, 180);
+      pdf.setFontSize(11);
+      let y = 20;
+      lines.forEach(line => {
+        if (y > 280) { pdf.addPage(); y = 20; }
+        pdf.text(line, 15, y);
+        y += 7;
+      });
+      pdf.save('ocr-text.pdf');
+    };
+  </script>
+</body>
+</html>

@@ -60,12 +60,19 @@
     <input type="file" id="fileInput" multiple accept=".pdf,image/*" hidden>
     <div class="row">
       <label>Язык
-        <select id="lang">
-          <option value="rus">Русский</option>
-          <option value="eng">English</option>
-          <option value="rus+eng" selected>Русский + English</option>
-        </select>
-      </label>
+       <select id="lang">
+        <option value="rus">Русский</option>
+        <option value="eng">English</option>
+        <option value="rus+eng">Русский + English</option>
+    <option value="uzb">Узбекский (латиница)</option>
+    <option value="uzb_cyrl">Узбекский (кириллица)</option>
+    <option value="rus+uzb_cyrl" selected>Русский + узбекский (кириллица)</option>
+    <option value="rus+uzb">Русский + узбекский (латиница)</option>
+    <option value="uzb+eng">Узбекский (лат.) + English</option>
+    <option value="uzb_cyrl+eng">Узбекский (кир.) + English</option>
+    <option value="rus+uzb_cyrl+eng">Русский + узб. (кир.) + English</option>
+  </select>
+     </label>
       <label>Масштаб
         <select id="scale">
           <option value="1.5">1.5 (быстрее)</option>
@@ -240,12 +247,14 @@
       return canvas;
     }
 
-    function correctText(raw) {
+        function correctText(raw) {
       if (!raw) return '';
       let t = raw
         .replace(/\u00ad/g, '')
         .replace(/[“”«»]/g, '"')
-        .replace(/[‘’]/g, "'")
+        .replace(/[‘’`´]/g, "'")
+        .replace(/o['’ʻʼ]/gi, 'oʻ')
+        .replace(/g['’ʻʼ]/gi, 'gʻ')
         .replace(/(\p{L})-\s*\n\s*(\p{L})/gu, '$1$2')
         .replace(/\|\s*(?=\p{L})/gu, 'I')
         .replace(/[ \t]+\n/g, '\n')
@@ -255,7 +264,7 @@
       let cur = '';
       for (const line of lines) {
         if (!line) { if (cur) { paras.push(cur); cur = ''; } continue; }
-        const startLower = /^[a-zа-яё]/.test(line);
+        const startLower = /^[a-zа-яёўқғҳ]/i.test(line);
         const endPunct = /[.!?…"»)]$/u.test(cur);
         if (cur && !endPunct && (startLower || cur.length < 70)) cur += ' ' + line;
         else { if (cur) paras.push(cur); cur = line; }

@@ -1,4 +1,4 @@
-const VERSION = 'ocr-pwa-v4';
+const VERSION = 'ocr-pwa-v5';
 const SHELL = VERSION + '-shell';
 const RUNTIME = VERSION + '-runtime';
 
